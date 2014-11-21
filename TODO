@@ -1,0 +1,9 @@
+- add an optional padding field to get big quickly
+  - user defined size
+  - user defined compressible amount
+- improve command line argument passing
+  - use "--argument value" syntax
+  - add defaults
+- additional query workload features
+  - randomly select query type (based on indexes)
+- compare other features in Launchpad version
