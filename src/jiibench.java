@@ -29,10 +29,10 @@ public class jiibench {
     public static AtomicLong globalQueriesTimeMs = new AtomicLong(0);
     public static AtomicLong globalQueriesStarted = new AtomicLong(0);
     public static AtomicLong globalInsertExceptions = new AtomicLong(0);
-    
+
     public static Writer writer = null;
     public static boolean outputHeader = true;
-    
+
     public static int numCashRegisters = 1000;
     public static int numProducts = 10000;
     public static int numCustomers = 100000;
@@ -66,7 +66,7 @@ public class jiibench {
     public static String randomStringHolder;
     public static int compressibleStringLength =  4*1024*1024;
     public static String compressibleStringHolder;
-    
+
     public static String tableName = "purchases_index";
 
     public static String mysqlPort;
@@ -75,19 +75,24 @@ public class jiibench {
     public static String mysqlServer;
     public static String mysqlUsername;
     public static String mysqlPassword;
-    
+    public static String createTable;
+
     public static int allDone = 0;
-    
+
     public jiibench() {
     }
 
     public static void main (String[] args) throws Exception {
-        if (args.length != 23) {
+        if (args.length != 24) {
             logMe("*** ERROR : CONFIGURATION ISSUE ***");
-            logMe("jiibench [database name] [number of writer threads] [rows per table] [rows per insert] [inserts feedback] [seconds feedback] [log file name] [number of seconds to run] [queries per interval] [interval (seconds)] [query limit] [inserts for begin query] [max inserts per second] [num char fields] [length char fields] [num secondary indexes] [percent compressible] [mysql port] [mysql storage engine] [innodb key block size, 0 if none] [mysql server] [mysql username] [mysql password]");
+            logMe("jiibench [database name] [number of writer threads] [rows per table] [rows per insert] [inserts feedback] "+
+                      "[seconds feedback] [log file name] [number of seconds to run] [queries per interval] [interval (seconds)] "+
+                      "[query limit] [inserts for begin query] [max inserts per second] [num char fields] [length char fields] "+
+                      "[num secondary indexes] [percent compressible] [mysql port] [mysql storage engine] [innodb key block size, 0 if none] "+
+                      "[mysql server] [mysql username] [mysql password] [create table Y/N]");
             System.exit(1);
         }
-        
+
         dbName = args[0];
         writerThreads = Integer.valueOf(args[1]);
         numMaxInserts = Integer.valueOf(args[2]);
@@ -111,9 +116,10 @@ public class jiibench {
         mysqlServer = args[20];
         mysqlUsername = args[21];
         mysqlPassword = args[22];
-        
+        createTable = args[23].toLowerCase();
+
         maxThreadInsertsPerSecond = (maxInsertsPerSecond / writerThreads);
-        
+
         if ((numSecondaryIndexes < 0) || (numSecondaryIndexes > 3)) {
             logMe("*** ERROR : INVALID NUMBER OF SECONDARY INDEXES, MUST BE >= 0 and <= 3 ***");
             logMe("  %d secondary indexes is not supported",numSecondaryIndexes);
@@ -125,7 +131,7 @@ public class jiibench {
             logMe("  innodb key block size of %d is not supported",numSecondaryIndexes);
             System.exit(1);
         }
-        
+
         if ((queriesPerInterval <= 0) || (queryIntervalSeconds <= 0))
         {
             queriesPerMinute = 0.0;
@@ -136,13 +142,13 @@ public class jiibench {
             queriesPerMinute = (double)queriesPerInterval * (60.0 / (double)queryIntervalSeconds);
             msBetweenQueries = (long)((1000.0 * (double)queryIntervalSeconds) / (double)queriesPerInterval);
         }
-        
+
         if ((percentCompressible < 0) || (percentCompressible > 100)) {
             logMe("*** ERROR : INVALID PERCENT COMPRESSIBLE, MUST BE >=0 and <= 100 ***");
             logMe("  %d secondary indexes is not supported",percentCompressible);
             System.exit(1);
         }
-        
+
         numCompressibleCharacters = (int) (((double) percentCompressible / 100.0) * (double) lengthCharFields);
         numUncompressibleCharacters = (int) (((100.0 - (double) percentCompressible) / 100.0) * (double) lengthCharFields);
 
@@ -195,7 +201,7 @@ public class jiibench {
             // handle the error
             ex.printStackTrace();
         }
-        
+
         if (writerThreads > 1) {
             numMaxInserts = numMaxInserts / writerThreads;
         }
@@ -206,63 +212,70 @@ public class jiibench {
             e.printStackTrace();
         }
 
-        // create the table
-        Connection conn = null;
-        Statement stmt = null;
-            
-        try {
-            conn = DriverManager.getConnection("jdbc:mysql://"+mysqlServer+":"+mysqlPort+"/"+dbName+"?user="+mysqlUsername+"&password="+mysqlPassword+"&rewriteBatchedStatements=true");
-            stmt = conn.createStatement();
-      
-            // drop the table if it exists
-            String sqlDrop = "drop table if exists " + tableName;
-            stmt.executeUpdate(sqlDrop);
-      
+        if (createTable.equals("n"))
+        {
+            logMe("Skipping table creation");
+        }
+        else
+        {
             // create the table
-            String sqlCharFields = "";
-            for (int i = 1; i <= numCharFields; i++) {
-                sqlCharFields += " charfield" + Integer.toString(i) + " varchar(" + lengthCharFields + ") not null, ";
-            }
+            Connection conn = null;
+            Statement stmt = null;
 
-            // innodb compression
-            String sqlKeyBlockSize = "";
-            if ((innodbKeyBlockSize > 0) && storageEngine.equals("innodb")) {
-                sqlKeyBlockSize += " ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=" + Integer.toString(innodbKeyBlockSize) + " ";
-            }
-            
-            String sqlCreate = "create table " + tableName + " (" +
-                               "transactionid int not null auto_increment, " +
-                               "dateandtime datetime, " +
-                               "cashregisterid int not null, " +
-                               "customerid int not null, " +
-                               "productid int not null, " +
-                               "price float not null, " +
-                               sqlCharFields + 
-                               "primary key (transactionid) " +
-                               ") engine=" + storageEngine + sqlKeyBlockSize;
-            stmt.executeUpdate(sqlCreate);
+            try {
+                conn = DriverManager.getConnection("jdbc:mysql://"+mysqlServer+":"+mysqlPort+"/"+dbName+"?user="+mysqlUsername+"&password="+mysqlPassword+"&rewriteBatchedStatements=true");
+                stmt = conn.createStatement();
 
-            if (numSecondaryIndexes >= 1) {
-                logMe(" *** creating secondary index marketsegment (price, customerid)");
-                String sqlIndex1 = "create index marketsegment on " + tableName + " (price, customerid)";
-                stmt.executeUpdate(sqlIndex1);
+                // drop the table if it exists
+                String sqlDrop = "drop table if exists " + tableName;
+                stmt.executeUpdate(sqlDrop);
+
+                // create the table
+                String sqlCharFields = "";
+                for (int i = 1; i <= numCharFields; i++) {
+                    sqlCharFields += " charfield" + Integer.toString(i) + " varchar(" + lengthCharFields + ") not null, ";
+                }
+
+                // innodb compression
+                String sqlKeyBlockSize = "";
+                if ((innodbKeyBlockSize > 0) && storageEngine.equals("innodb")) {
+                    sqlKeyBlockSize += " ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=" + Integer.toString(innodbKeyBlockSize) + " ";
+                }
+
+                String sqlCreate = "create table " + tableName + " (" +
+                                   "transactionid int not null auto_increment, " +
+                                   "dateandtime datetime, " +
+                                   "cashregisterid int not null, " +
+                                   "customerid int not null, " +
+                                   "productid int not null, " +
+                                   "price float not null, " +
+                                   sqlCharFields +
+                                   "primary key (transactionid) " +
+                                   ") engine=" + storageEngine + sqlKeyBlockSize;
+                stmt.executeUpdate(sqlCreate);
+
+                if (numSecondaryIndexes >= 1) {
+                    logMe(" *** creating secondary index marketsegment (price, customerid)");
+                    String sqlIndex1 = "create index marketsegment on " + tableName + " (price, customerid)";
+                    stmt.executeUpdate(sqlIndex1);
+                }
+                if (numSecondaryIndexes >= 2) {
+                    logMe(" *** creating secondary index registersegment (cashregisterid, price, customerid)");
+                    String sqlIndex2 = "create index registersegment on " + tableName + " (cashregisterid, price, customerid)";
+                    stmt.executeUpdate(sqlIndex2);
+                }
+                if (numSecondaryIndexes >= 3) {
+                    logMe(" *** creating secondary index pdc (price, dateandtime, customerid)");
+                    String sqlIndex3 = "create index pdc on " + tableName + " (price, dateandtime, customerid)";
+                    stmt.executeUpdate(sqlIndex3);
+                }
+
+            } catch (SQLException ex) {
+                // handle any errors
+                System.out.println("SQLException: " + ex.getMessage());
+                System.out.println("SQLState: " + ex.getSQLState());
+                System.out.println("VendorError: " + ex.getErrorCode());
             }
-            if (numSecondaryIndexes >= 2) {
-                logMe(" *** creating secondary index registersegment (cashregisterid, price, customerid)");
-                String sqlIndex2 = "create index registersegment on " + tableName + " (cashregisterid, price, customerid)";
-                stmt.executeUpdate(sqlIndex2);
-            }
-            if (numSecondaryIndexes >= 3) {
-                logMe(" *** creating secondary index pdc (price, dateandtime, customerid)");
-                String sqlIndex3 = "create index pdc on " + tableName + " (price, dateandtime, customerid)";
-                stmt.executeUpdate(sqlIndex3);
-            }
-            
-        } catch (SQLException ex) {
-            // handle any errors
-            System.out.println("SQLException: " + ex.getMessage());
-            System.out.println("SQLState: " + ex.getSQLState());
-            System.out.println("VendorError: " + ex.getErrorCode());
         }
 
         java.util.Random rand = new java.util.Random();
@@ -270,7 +283,7 @@ public class jiibench {
         // create random string holder
         logMe("  creating %,d bytes of random character data...",randomStringLength);
         char[] tempString = new char[randomStringLength];
-        for (int i = 0 ; i < randomStringLength ; i++) { 
+        for (int i = 0 ; i < randomStringLength ; i++) {
             tempString[i] = (char) (rand.nextInt(26) + 'a');
         }
         randomStringHolder = new String(tempString);
@@ -278,7 +291,7 @@ public class jiibench {
         // create compressible string holder
         logMe("  creating %,d bytes of compressible character data...",compressibleStringLength);
         char[] tempStringCompressible = new char[compressibleStringLength];
-        for (int i = 0 ; i < compressibleStringLength ; i++) { 
+        for (int i = 0 ; i < compressibleStringLength ; i++) {
             tempStringCompressible[i] = 'a';
         }
         compressibleStringHolder = new String(tempStringCompressible);
@@ -295,14 +308,14 @@ public class jiibench {
         }
 
         Thread[] tWriterThreads = new Thread[writerThreads];
-        
+
         // start the loaders
         for (int i=0; i<writerThreads; i++) {
             globalWriterThreads.incrementAndGet();
             tWriterThreads[i] = new Thread(t.new MyWriter(writerThreads, i, numMaxInserts, maxThreadInsertsPerSecond));
             tWriterThreads[i].start();
         }
-        
+
         try {
             Thread.sleep(10000);
         } catch (Exception e) {
@@ -322,7 +335,7 @@ public class jiibench {
             if (tWriterThreads[i].isAlive())
                 tWriterThreads[i].join();
         }
-        
+
         try {
             if (writer != null) {
                 writer.close();
@@ -330,18 +343,18 @@ public class jiibench {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        
+
         logMe("Done!");
     }
-    
+
     class MyWriter implements Runnable {
-        int threadCount; 
-        int threadNumber; 
+        int threadCount;
+        int threadNumber;
         int numMaxInserts;
         int maxInsertsPerSecond;
-        
+
         java.util.Random rand;
-        
+
         MyWriter(int threadCount, int threadNumber, int numMaxInserts, int maxInsertsPerSecond) {
             this.threadCount = threadCount;
             this.threadNumber = threadNumber;
@@ -359,7 +372,7 @@ public class jiibench {
                 sqlCharFields += ",charfield" + Integer.toString(i);
                 sqlCharFieldPlaceHolders += ",?";
             }
-            
+
             try {
                 conn = DriverManager.getConnection("jdbc:mysql://localhost:"+mysqlPort+"/"+dbName+"?user=root&password=&rewriteBatchedStatements=true");
                 pstmt = conn.prepareStatement("INSERT INTO "+tableName+"(dateandtime,cashregisterid,customerid,productid,price"+sqlCharFields+") VALUES (?,?,?,?,?"+sqlCharFieldPlaceHolders+")");
@@ -374,12 +387,12 @@ public class jiibench {
             long numLastInserts = 0;
             int id = 0;
             long nextMs = System.currentTimeMillis() + 1000;
-            
+
             try {
                 logMe("Writer thread %d : started to load table %s",threadNumber, tableName);
 
                 int numRounds = numMaxInserts / rowsPerInsert;
-                
+
                 for (int roundNum = 0; roundNum < numRounds; roundNum++) {
                     if ((numInserts - numLastInserts) >= maxInsertsPerSecond) {
                         // pause until a second has passed
@@ -400,7 +413,7 @@ public class jiibench {
                         //id++;
                         int thisCustomerId = rand.nextInt(numCustomers);
                         double thisPrice= ((rand.nextDouble() * maxPrice) + (double) thisCustomerId) / 100.0;
-                        
+
                         pstmt.setTimestamp(1, tsBatch);
                         pstmt.setInt(2, rand.nextInt(numCashRegisters));
                         pstmt.setInt(3, thisCustomerId);
@@ -412,7 +425,7 @@ public class jiibench {
                             //doc.put("cf"+Integer.toString(charField), randomStringHolder.substring(startPosition,startPosition+numUncompressibleCharacters) + compressibleStringHolder.substring(startPosition,startPosition+numCompressibleCharacters));
                             pstmt.setString(5+charField, randomStringHolder.substring(startPosition,startPosition+numUncompressibleCharacters) + compressibleStringHolder.substring(startPosition,startPosition+numCompressibleCharacters));
                         }
-                        
+
                         pstmt.addBatch();
                     }
 
@@ -421,13 +434,13 @@ public class jiibench {
                         //conn.commit();
                         numInserts += rowsPerInsert;
                         globalInserts.addAndGet(rowsPerInsert);
-                        
+
                     } catch (Exception e) {
                         logMe("Writer thread %d : EXCEPTION",threadNumber);
                         e.printStackTrace();
                         globalInsertExceptions.incrementAndGet();
                     }
-                    
+
                     if (allDone == 1)
                         break;
                 }
@@ -436,7 +449,7 @@ public class jiibench {
                 logMe("Writer thread %d : EXCEPTION",threadNumber);
                 e.printStackTrace();
             }
-            
+
             long numWriters = globalWriterThreads.decrementAndGet();
             if (numWriters == 0)
                 allDone = 1;
@@ -445,12 +458,12 @@ public class jiibench {
 
 
     class MyQuery implements Runnable {
-        int threadCount; 
-        int threadNumber; 
+        int threadCount;
+        int threadNumber;
         int numMaxInserts;
 
         java.util.Random rand;
-        
+
         MyQuery(int threadCount, int threadNumber, int numMaxInserts) {
             this.threadCount = threadCount;
             this.threadNumber = threadNumber;
@@ -470,13 +483,13 @@ public class jiibench {
                 sqlCharFields += ",charfield" + Integer.toString(i);
                 sqlCharFieldPlaceHolders += ",?";
             }
-            
+
             try {
                 conn = DriverManager.getConnection("jdbc:mysql://localhost:"+mysqlPort+"/"+dbName+"?user=root&password=&rewriteBatchedStatements=true");
-                
+
                 // prepare the 4 possible queries
                 pstmt1 = conn.prepareStatement("select transactionid from "+tableName+" where (transactionid >= ?) limit ?");
-                
+
                 pstmt2 = conn.prepareStatement("select price,dateandtime,customerid from "+tableName+" FORCE INDEX (pdc) where " +
                                                     "(price=? and dateandtime=? and customerid>=?) OR " +
                                                     "(price=? and dateandtime>?) OR " +
@@ -485,7 +498,7 @@ public class jiibench {
                 pstmt3 = conn.prepareStatement("select price,customerid from "+tableName+" FORCE INDEX (marketsegment) where " +
                                                     "(price=? and customerid>=?) OR " +
                                                     "(price>?) LIMIT ?");
-                
+
                 pstmt4 = conn.prepareStatement("select cashregisterid,price,customerid from "+tableName+" FORCE INDEX (registersegment) where " +
                                                     "(cashregisterid=? and price=? and customerid>=?) OR " +
                                                     "(cashregisterid=? and price>?) OR " +
@@ -497,18 +510,18 @@ public class jiibench {
                 System.out.println("SQLState: " + ex.getSQLState());
                 System.out.println("VendorError: " + ex.getErrorCode());
             }
-            
+
             long t0 = System.currentTimeMillis();
             long lastMs = t0;
             long nextQueryMillis = t0;
             boolean outputWaiting = true;
             boolean outputStarted = true;
-            
+
             long numQueriesExecuted = 0;
             long numQueriesTimeMs = 0;
-            
+
             int whichQuery = 0;
-            
+
             try {
                 logMe("Query thread %d : ready to query table %s",threadNumber, tableName);
 
@@ -518,9 +531,9 @@ public class jiibench {
                     //} catch (Exception e) {
                     //    e.printStackTrace();
                     // }
-                    
+
                     long thisNow = System.currentTimeMillis();
-                    
+
                     // wait until my next runtime
                     if (thisNow > nextQueryMillis) {
                         nextQueryMillis = thisNow + msBetweenQueries;
@@ -534,12 +547,12 @@ public class jiibench {
                                 // set query start time
                                 globalQueriesStarted.set(thisNow);
                             }
-                            
+
                             whichQuery++;
                             if (whichQuery > 4) {
                                 whichQuery = 1;
                             }
-                            
+
                             long thisRandomTransactionId = rand.nextLong() % globalInserts.get();
                             int thisCustomerId = rand.nextInt(numCustomers);
                             double thisPrice = ((rand.nextDouble() * maxPrice) + (double) thisCustomerId) / 100.0;
@@ -547,7 +560,7 @@ public class jiibench {
                             int thisProductId = rand.nextInt(numProducts);
                             long thisRandomTime = t0 + (long) ((double) (thisNow - t0) * rand.nextDouble());
                             Timestamp thisRandomTimestamp = new Timestamp(thisRandomTime);
-                            
+
                             long now = System.currentTimeMillis();
                             if (whichQuery == 1) {
                                 pstmt1.setLong(1, thisRandomTransactionId);
@@ -624,12 +637,12 @@ public class jiibench {
                 logMe("Query thread %d : EXCEPTION",threadNumber);
                 e.printStackTrace();
             }
-            
+
             long numQueries = globalQueryThreads.decrementAndGet();
         }
     }
 
-    
+
     // reporting thread, outputs information to console and file
     class MyReporter implements Runnable {
         public void run()
@@ -655,14 +668,14 @@ public class jiibench {
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
-                
+
                 long now = System.currentTimeMillis();
-                
+
                 if (now >= endDueToTime)
                 {
                     allDone = 1;
                 }
-                
+
                 thisInserts = globalInserts.get();
                 thisQueriesNum = globalQueriesExecuted.get();
                 thisQueriesMs = globalQueriesTimeMs.get();
@@ -676,7 +689,7 @@ public class jiibench {
 
                     long elapsed = now - t0;
                     long thisIntervalMs = now - lastMs;
-                    
+
                     long thisIntervalInserts = thisInserts - lastInserts;
                     double thisIntervalInsertsPerSecond = thisIntervalInserts/(double)thisIntervalMs*1000.0;
                     double thisInsertsPerSecond = thisInserts/(double)elapsed*1000.0;
@@ -687,7 +700,7 @@ public class jiibench {
                     double thisQueryAvgMs = 0;
                     double thisIntervalAvgQPM = 0;
                     double thisAvgQPM = 0;
-                    
+
                     long thisInsertExceptions = globalInsertExceptions.get();
 
                     if (thisIntervalQueriesNum > 0) {
@@ -696,7 +709,7 @@ public class jiibench {
                     if (thisQueriesNum > 0) {
                         thisQueryAvgMs = thisQueriesMs/(double)thisQueriesNum;
                     }
-                    
+
                     if (thisQueriesStarted > 0)
                     {
                         long adjustedElapsed = now - thisQueriesStarted;
@@ -709,23 +722,23 @@ public class jiibench {
                             thisIntervalAvgQPM = (double)thisIntervalQueriesNum/((double)thisIntervalMs/1000.0/60.0);
                         }
                     }
-                    
+
                     if (secondsPerFeedback > 0)
                     {
                         logMe("%,d inserts : %,d seconds : cum ips=%,.2f : int ips=%,.2f : cum avg qry=%,.2f : int avg qry=%,.2f : cum avg qpm=%,.2f : int avg qpm=%,.2f : exceptions=%,d", thisInserts, elapsed / 1000l, thisInsertsPerSecond, thisIntervalInsertsPerSecond, thisQueryAvgMs, thisIntervalQueryAvgMs, thisAvgQPM, thisIntervalAvgQPM, thisInsertExceptions);
                     } else {
                         logMe("%,d inserts : %,d seconds : cum ips=%,.2f : int ips=%,.2f : cum avg qry=%,.2f : int avg qry=%,.2f : cum avg qpm=%,.2f : int avg qpm=%,.2f : exceptions=%,d", intervalNumber * insertsPerFeedback, elapsed / 1000l, thisInsertsPerSecond, thisIntervalInsertsPerSecond, thisQueryAvgMs, thisIntervalQueryAvgMs, thisAvgQPM, thisIntervalAvgQPM, thisInsertExceptions);
                     }
-                    
+
                     try {
                         if (outputHeader)
                         {
                             writer.write("tot_inserts\telap_secs\tcum_ips\tint_ips\tcum_qry_avg\tint_qry_avg\tcum_qpm\tint_qpm\texceptions\n");
                             outputHeader = false;
                         }
-                            
+
                         String statusUpdate = "";
-                        
+
                         if (secondsPerFeedback > 0)
                         {
                             statusUpdate = String.format("%d\t%d\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f\t%,d\n",thisInserts, elapsed / 1000l, thisInsertsPerSecond, thisIntervalInsertsPerSecond, thisQueryAvgMs, thisIntervalQueryAvgMs, thisAvgQPM, thisIntervalAvgQPM, thisInsertExceptions);
@@ -745,7 +758,7 @@ public class jiibench {
                     lastMs = now;
                 }
             }
-            
+
             // output final numbers...
             long now = System.currentTimeMillis();
             thisInserts = globalInserts.get();
@@ -808,7 +821,7 @@ public class jiibench {
             } catch (IOException e) {
                 e.printStackTrace();
             }
-            
+
         }
     }
 

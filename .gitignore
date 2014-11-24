@@ -4,3 +4,11 @@
 *.jar
 *.war
 *.ear
+
+build.xml
+capture-iostat-datasize.bash
+doit-hillclimb.bash
+doit-multi.bash
+doit.bash
+prep.bash
+run.load.bash
