@@ -69,10 +69,12 @@ public class jiibench {
 
     public static String tableName = "purchases_index";
 
-    public static String mysqlPort;
     public static String storageEngine;
     public static int innodbKeyBlockSize;
+    private static int[] validInnodbKeyBlockSizes = new int[] {1,2,4,8,16};
+
     public static String mysqlServer;
+    public static String mysqlPort;
     public static String mysqlUsername;
     public static String mysqlPassword;
     public static String createTable;
@@ -126,9 +128,10 @@ public class jiibench {
             System.exit(1);
         }
 
-        if ((innodbKeyBlockSize < 0) || (innodbKeyBlockSize > 16)) {
-            logMe("*** ERROR : INVALID INNODB KEY BLOCK SIZE, MUST BE >= 0 and <= 16 ***");
-            logMe("  innodb key block size of %d is not supported",numSecondaryIndexes);
+        if (storageEngine.equals("innodb") && innodbKeyBlockSize != 0
+            && !Arrays.asList(validInnodbKeyBlockSizes).contains(innodbKeyBlockSize)) {
+            logMe("*** ERROR : INVALID INNODB KEY BLOCK SIZE, MUST BE 1, 2, 4, 8 or 16 ***");
+            logMe("  innodb key block size of %d is not supported",innodbKeyBlockSize);
             System.exit(1);
         }
 
@@ -188,7 +191,7 @@ public class jiibench {
         logMe("  MySQL Port= %s",mysqlPort);
         logMe("  MySQL Username= %s",mysqlUsername);
         logMe("  MySQL Storage Engine= %s",storageEngine);
-        if (storageEngine.equals("innodb") && (innodbKeyBlockSize > 0))
+        if (storageEngine.equals("innodb") && innodbKeyBlockSize != 0)
         {
             logMe("  InnoDB Key Block Size = %d",innodbKeyBlockSize);
         }
@@ -199,7 +202,9 @@ public class jiibench {
             Class.forName("com.mysql.jdbc.Driver").newInstance();
         } catch (Exception ex) {
             // handle the error
+            logMe("*** ERROR : MySQL JDBC driver not found, have you set your CLASSPATH? ***");
             ex.printStackTrace();
+            System.exit(1);
         }
 
         if (writerThreads > 1) {
@@ -238,8 +243,8 @@ public class jiibench {
 
                 // innodb compression
                 String sqlKeyBlockSize = "";
-                if ((innodbKeyBlockSize > 0) && storageEngine.equals("innodb")) {
-                    sqlKeyBlockSize += " ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=" + Integer.toString(innodbKeyBlockSize) + " ";
+                if (storageEngine.equals("innodb") && innodbKeyBlockSize != 0) {
+                    sqlKeyBlockSize = " ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=" + Integer.toString(innodbKeyBlockSize);
                 }
 
                 String sqlCreate = "create table " + tableName + " (" +
