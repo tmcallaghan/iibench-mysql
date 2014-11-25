@@ -379,7 +379,7 @@ public class jiibench {
             }
 
             try {
-                conn = DriverManager.getConnection("jdbc:mysql://localhost:"+mysqlPort+"/"+dbName+"?user=root&password=&rewriteBatchedStatements=true");
+                conn = DriverManager.getConnection("jdbc:mysql://localhost:"+mysqlPort+"/"+dbName+"?user="+mysqlUsername+"&password="+mysqlPassword+"&rewriteBatchedStatements=true");
                 pstmt = conn.prepareStatement("INSERT INTO "+tableName+"(dateandtime,cashregisterid,customerid,productid,price"+sqlCharFields+") VALUES (?,?,?,?,?"+sqlCharFieldPlaceHolders+")");
             } catch (SQLException ex) {
                 // handle any errors
