@@ -490,7 +490,7 @@ public class jiibench {
             }
 
             try {
-                conn = DriverManager.getConnection("jdbc:mysql://localhost:"+mysqlPort+"/"+dbName+"?user=root&password=&rewriteBatchedStatements=true");
+                conn = DriverManager.getConnection("jdbc:mysql://localhost:"+mysqlPort+"/"+dbName+"?user="+mysqlUsername+"&password="+mysqlPassword+"rewriteBatchedStatements=true");
 
                 // prepare the 4 possible queries
                 pstmt1 = conn.prepareStatement("select transactionid from "+tableName+" where (transactionid >= ?) limit ?");
