@@ -379,7 +379,7 @@ public class jiibench {
             }
 
             try {
-                conn = DriverManager.getConnection("jdbc:mysql://localhost:"+mysqlPort+"/"+dbName+"?user="+mysqlUsername+"&password="+mysqlPassword+"&rewriteBatchedStatements=true");
+                conn = DriverManager.getConnection("jdbc:mysql://"+mysqlServer+":"+mysqlPort+"/"+dbName+"?user="+mysqlUsername+"&password="+mysqlPassword+"&rewriteBatchedStatements=true");
                 pstmt = conn.prepareStatement("INSERT INTO "+tableName+"(dateandtime,cashregisterid,customerid,productid,price"+sqlCharFields+") VALUES (?,?,?,?,?"+sqlCharFieldPlaceHolders+")");
             } catch (SQLException ex) {
                 // handle any errors
@@ -490,7 +490,7 @@ public class jiibench {
             }
 
             try {
-                conn = DriverManager.getConnection("jdbc:mysql://localhost:"+mysqlPort+"/"+dbName+"?user="+mysqlUsername+"&password="+mysqlPassword+"rewriteBatchedStatements=true");
+                conn = DriverManager.getConnection("jdbc:mysql://"+mysqlServer+":"+mysqlPort+"/"+dbName+"?user="+mysqlUsername+"&password="+mysqlPassword+"&rewriteBatchedStatements=true");
 
                 // prepare the 4 possible queries
                 pstmt1 = conn.prepareStatement("select transactionid from "+tableName+" where (transactionid >= ?) limit ?");
